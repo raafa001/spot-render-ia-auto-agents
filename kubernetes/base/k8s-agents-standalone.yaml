@@ -1,7 +1,5 @@
-# Spot Render IA Auto Agent - Kubernetes Manifests (Standalone Version)
-# Uses Python image with dependencies installed at runtime
+# Spot Render IA Auto Agents - Kubernetes Manifests (Functional Version)
 
-# Namespace
 ---
 apiVersion: v1
 kind: Namespace
@@ -13,7 +11,6 @@ metadata:
     app.kubernetes.io/part-of: spot-render
 
 ---
-# Service Account for Agents
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -21,7 +18,6 @@ metadata:
   namespace: spot-render-ai-agents
 
 ---
-# Role for all agents - Read access to cluster
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -55,7 +51,6 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
 
 ---
-# ConfigMap for Agent Configuration
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -66,12 +61,8 @@ data:
   AGENT_LOG_LEVEL: "INFO"
   OLLAMA_URL: "http://ollama.spot-ai.svc.cluster.local:11434"
   OLLAMA_MODEL: "llama3.2:latest"
-  SNAPSHOT_RETENTION_COUNT: "1000"
-  SNAPSHOT_RETENTION_HOURS: "72"
-  DECISION_THRESHOLD: "0.7"
 
 ---
-# ConfigMap for Inter-Agent Communication
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -81,7 +72,6 @@ data:
   messages: "[]"
 
 ---
-# ConfigMap for Shared State
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -91,7 +81,6 @@ data:
   state: "{}"
 
 ---
-# SRE Agent - DaemonSet
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -110,48 +99,49 @@ spec:
       containers:
         - name: sre-agent
           image: python:3.11-slim
-          command:
-            - python
-            - -c
+          command: ["python3", "-c"]
+          args:
             - |
-              import subprocess
-              import sys
-
-              # Install dependencies
-              subprocess.check_call([
-                  sys.executable, "-m", "pip", "install",
-                  "kubernetes>=29.0.0", "httpx>=0.26.0", "pydantic>=2.5.0",
-                  "tenacity>=8.2.3", "asyncio", "json-logger"
-              ])
-
-              # Simulate SRE Agent running
-              import time
-              import logging
-
-              logging.basicConfig(level=logging.INFO)
+              import subprocess, sys, json, time, logging
+              from datetime import datetime
+              subprocess.check_call([sys.executable, "-m", "pip", "install", "kubernetes>=29.0.0"])
+              from kubernetes import client, config
+              logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
               logger = logging.getLogger("sre-agent")
+              try:
+                  config.load_incluster_config()
+              except:
+                  config.load_kube_config()
+              v1 = client.CoreV1Api()
+              logger.info("SRE Agent started")
 
-              logger.info("SRE Agent started - monitoring cluster")
-              logger.info("Monitoring: pods, deployments, services, metrics")
+              def get_unhealthy_pods():
+                  try:
+                      pods = v1.list_pod_for_all_namespaces(watch=False).items
+                      return [{'name': p.metadata.name, 'namespace': p.metadata.namespace, 'phase': p.status.phase}
+                              for p in pods if p.status.phase not in ['Running', 'Succeeded']]
+                  except Exception as e:
+                      logger.error(f"Error: {e}")
+                      return []
 
               while True:
-                  logger.info("SRE Agent cycle - taking metric snapshots")
+                  unhealthy = get_unhealthy_pods()
+                  logger.info(f"SRE cycle: {len(unhealthy)} unhealthy pods")
+                  if unhealthy:
+                      logger.warning(f"Unhealthy pods: {json.dumps(unhealthy)}")
                   time.sleep(30)
-
           envFrom:
             - configMapRef:
                 name: agent-config
           resources:
             requests:
-              cpu: 50m
-              memory: 64Mi
+              cpu: 100m
+              memory: 128Mi
             limits:
-              cpu: 200m
-              memory: 256Mi
-          terminationMessagePolicy: FallbackToLogsOnError
+              cpu: 500m
+              memory: 512Mi
 
 ---
-# DevOps Agent - Deployment
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -171,46 +161,49 @@ spec:
       containers:
         - name: devops-agent
           image: python:3.11-slim
-          command:
-            - python
-            - -c
+          command: ["python3", "-c"]
+          args:
             - |
-              import subprocess
-              import sys
-
-              subprocess.check_call([
-                  sys.executable, "-m", "pip", "install",
-                  "kubernetes>=29.0.0", "httpx>=0.26.0", "pydantic>=2.5.0",
-                  "tenacity>=8.2.3", "asyncio"
-              ])
-
-              import time
-              import logging
-
-              logging.basicConfig(level=logging.INFO)
+              import subprocess, sys, json, time, logging
+              from datetime import datetime
+              subprocess.check_call([sys.executable, "-m", "pip", "install", "kubernetes>=29.0.0"])
+              from kubernetes import client, config
+              logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
               logger = logging.getLogger("devops-agent")
+              try:
+                  config.load_incluster_config()
+              except:
+                  config.load_kube_config()
+              apps_v1 = client.AppsV1Api()
+              logger.info("DevOps Agent started")
 
-              logger.info("DevOps Agent started - managing infrastructure")
-              logger.info("Capabilities: scale, restart, config management")
+              def get_deployments(ns):
+                  try:
+                      return [{'name': d.metadata.name, 'replicas': d.spec.replicas, 'ready': d.status.ready_replicas or 0}
+                              for d in apps_v1.list_namespaced_deployment(ns).items]
+                  except Exception as e:
+                      logger.error(f"Error: {e}")
+                      return []
 
               while True:
-                  logger.info("DevOps Agent cycle - checking pending operations")
+                  deploys = get_deployments('spot-render')
+                  logger.info(f"DevOps cycle: {len(deploys)} deployments")
+                  for d in deploys:
+                      if d['replicas'] != d['ready']:
+                          logger.warning(f"Deployment {d['name']}: {d['ready']}/{d['replicas']} ready")
                   time.sleep(45)
-
           envFrom:
             - configMapRef:
                 name: agent-config
           resources:
             requests:
-              cpu: 50m
-              memory: 64Mi
+              cpu: 100m
+              memory: 128Mi
             limits:
-              cpu: 200m
-              memory: 256Mi
-          terminationMessagePolicy: FallbackToLogsOnError
+              cpu: 500m
+              memory: 512Mi
 
 ---
-# Self-Healing Agent - Deployment
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -230,42 +223,88 @@ spec:
       containers:
         - name: self-healing-agent
           image: python:3.11-slim
-          command:
-            - python
-            - -c
+          command: ["python3", "-c"]
+          args:
             - |
-              import subprocess
-              import sys
-
-              subprocess.check_call([
-                  sys.executable, "-m", "pip", "install",
-                  "kubernetes>=29.0.0", "httpx>=0.26.0", "pydantic>=2.5.0",
-                  "tenacity>=8.2.3", "asyncio", "numpy>=1.26.0"
-              ])
-
-              import time
-              import logging
-              import datetime
-
-              logging.basicConfig(level=logging.INFO)
+              import subprocess, sys, json, time, logging
+              subprocess.check_call([sys.executable, "-m", "pip", "install", "kubernetes>=29.0.0", "httpx>=0.26.0"])
+              import httpx
+              from kubernetes import client, config
+              logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
               logger = logging.getLogger("self-healing-agent")
+              try:
+                  config.load_incluster_config()
+              except:
+                  config.load_kube_config()
+              v1 = client.CoreV1Api()
+              OLLAMA_URL = "http://ollama.spot-ai.svc.cluster.local:11434"
+              OLLAMA_MODEL = "llama3.2:latest"
+              logger.info("SelfHealing Agent started")
 
-              logger.info("Self-Healing Agent started")
-              logger.info("Capabilities: diagnose, remediate, document")
-              logger.info("Using LLM for decision making (requires Ollama)")
+              def check_ollama():
+                  try:
+                      r = httpx.get(f"{OLLAMA_URL}/api/tags", timeout=10)
+                      return r.status_code == 200
+                  except:
+                      return False
+
+              def get_unhealthy_pods():
+                  try:
+                      pods = v1.list_pod_for_all_namespaces(watch=False).items
+                      return [{'name': p.metadata.name, 'namespace': p.metadata.namespace, 'phase': p.status.phase}
+                              for p in pods if p.status.phase not in ['Running', 'Succeeded']]
+                  except Exception as e:
+                      logger.error(f"Error: {e}")
+                      return []
+
+              def diagnose_with_llm(issues):
+                  if not issues:
+                      return None
+                  prompt = "Analyze and respond with JSON with diagnosis and actions for: " + json.dumps(issues)
+                  try:
+                      r = httpx.post(f"{OLLAMA_URL}/api/chat", json={
+                          "model": OLLAMA_MODEL,
+                          "messages": [{"role": "user", "content": prompt}],
+                          "stream": False
+                      }, timeout=60)
+                      if r.status_code == 200:
+                          return r.json().get("message", {}).get("content", "")
+                      return None
+                  except Exception as e:
+                      logger.error(f"LLM error: {e}")
+                      return None
+
+              def restart_pod(ns, name):
+                  try:
+                      v1.delete_namespaced_pod(name, ns)
+                      logger.info(f"Restarted pod {ns}/{name}")
+                      return True
+                  except Exception as e:
+                      logger.error(f"Error: {e}")
+                      return False
 
               while True:
-                  logger.info(f"Self-Healing Agent cycle - {datetime.datetime.now()}")
-                  time.sleep(60)
+                  unhealthy = get_unhealthy_pods()
+                  ollama_ok = check_ollama()
+                  logger.info(f"SelfHealing cycle: {len(unhealthy)} unhealthy, Ollama: {ollama_ok}")
 
+                  if unhealthy:
+                      if ollama_ok:
+                          diagnosis = diagnose_with_llm(unhealthy)
+                          if diagnosis:
+                              logger.info(f"LLM diagnosis: {diagnosis[:200]}")
+                      for pod in unhealthy[:2]:
+                          restart_pod(pod['namespace'], pod['name'])
+                          time.sleep(2)
+
+                  time.sleep(60)
           envFrom:
             - configMapRef:
                 name: agent-config
           resources:
             requests:
-              cpu: 50m
-              memory: 64Mi
-            limits:
-              cpu: 200m
+              cpu: 100m
               memory: 256Mi
-          terminationMessagePolicy: FallbackToLogsOnError
+            limits:
+              cpu: 500m
+              memory: 512Mi
