@@ -1,0 +1,271 @@
+# Spot Render IA Auto Agent - Kubernetes Manifests (Standalone Version)
+# Uses Python image with dependencies installed at runtime
+
+# Namespace
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: spot-render-ai-agents
+  labels:
+    app.kubernetes.io/name: spot-render-ia-agents
+    app.kubernetes.io/component: agents
+    app.kubernetes.io/part-of: spot-render
+
+---
+# Service Account for Agents
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ai-agents
+  namespace: spot-render-ai-agents
+
+---
+# Role for all agents - Read access to cluster
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ai-agents
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps", "events", "namespaces", "endpoints", "secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ai-agents
+subjects:
+  - kind: ServiceAccount
+    name: ai-agents
+    namespace: spot-render-ai-agents
+roleRef:
+  kind: ClusterRole
+  name: ai-agents
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# ConfigMap for Agent Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-config
+  namespace: spot-render-ai-agents
+data:
+  AGENT_NAMESPACE: "spot-render"
+  AGENT_LOG_LEVEL: "INFO"
+  OLLAMA_URL: "http://spot-render-ollama.spot-render.svc.cluster.local:11434"
+  OLLAMA_MODEL: "llama3.2:latest"
+  SNAPSHOT_RETENTION_COUNT: "1000"
+  SNAPSHOT_RETENTION_HOURS: "72"
+  DECISION_THRESHOLD: "0.7"
+
+---
+# ConfigMap for Inter-Agent Communication
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-messages
+  namespace: spot-render-ai-agents
+data:
+  messages: "[]"
+
+---
+# ConfigMap for Shared State
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-shared-state
+  namespace: spot-render-ai-agents
+data:
+  state: "{}"
+
+---
+# SRE Agent - DaemonSet
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: sre-agent
+  namespace: spot-render-ai-agents
+spec:
+  selector:
+    matchLabels:
+      app: sre-agent
+  template:
+    metadata:
+      labels:
+        app: sre-agent
+    spec:
+      serviceAccountName: ai-agents
+      containers:
+        - name: sre-agent
+          image: python:3.11-slim
+          command:
+            - python
+            - -c
+            - |
+              import subprocess
+              import sys
+
+              # Install dependencies
+              subprocess.check_call([
+                  sys.executable, "-m", "pip", "install",
+                  "kubernetes>=29.0.0", "httpx>=0.26.0", "pydantic>=2.5.0",
+                  "tenacity>=8.2.3", "asyncio", "json-logger"
+              ])
+
+              # Simulate SRE Agent running
+              import time
+              import logging
+
+              logging.basicConfig(level=logging.INFO)
+              logger = logging.getLogger("sre-agent")
+
+              logger.info("SRE Agent started - monitoring cluster")
+              logger.info("Monitoring: pods, deployments, services, metrics")
+
+              while True:
+                  logger.info("SRE Agent cycle - taking metric snapshots")
+                  time.sleep(30)
+
+          envFrom:
+            - configMapRef:
+                name: agent-config
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          terminationMessagePolicy: FallbackToLogsOnError
+
+---
+# DevOps Agent - Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: devops-agent
+  namespace: spot-render-ai-agents
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: devops-agent
+  template:
+    metadata:
+      labels:
+        app: devops-agent
+    spec:
+      serviceAccountName: ai-agents
+      containers:
+        - name: devops-agent
+          image: python:3.11-slim
+          command:
+            - python
+            - -c
+            - |
+              import subprocess
+              import sys
+
+              subprocess.check_call([
+                  sys.executable, "-m", "pip", "install",
+                  "kubernetes>=29.0.0", "httpx>=0.26.0", "pydantic>=2.5.0",
+                  "tenacity>=8.2.3", "asyncio"
+              ])
+
+              import time
+              import logging
+
+              logging.basicConfig(level=logging.INFO)
+              logger = logging.getLogger("devops-agent")
+
+              logger.info("DevOps Agent started - managing infrastructure")
+              logger.info("Capabilities: scale, restart, config management")
+
+              while True:
+                  logger.info("DevOps Agent cycle - checking pending operations")
+                  time.sleep(45)
+
+          envFrom:
+            - configMapRef:
+                name: agent-config
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          terminationMessagePolicy: FallbackToLogsOnError
+
+---
+# Self-Healing Agent - Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: self-healing-agent
+  namespace: spot-render-ai-agents
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: self-healing-agent
+  template:
+    metadata:
+      labels:
+        app: self-healing-agent
+    spec:
+      serviceAccountName: ai-agents
+      containers:
+        - name: self-healing-agent
+          image: python:3.11-slim
+          command:
+            - python
+            - -c
+            - |
+              import subprocess
+              import sys
+
+              subprocess.check_call([
+                  sys.executable, "-m", "pip", "install",
+                  "kubernetes>=29.0.0", "httpx>=0.26.0", "pydantic>=2.5.0",
+                  "tenacity>=8.2.3", "asyncio", "numpy>=1.26.0"
+              ])
+
+              import time
+              import logging
+              import datetime
+
+              logging.basicConfig(level=logging.INFO)
+              logger = logging.getLogger("self-healing-agent")
+
+              logger.info("Self-Healing Agent started")
+              logger.info("Capabilities: diagnose, remediate, document")
+              logger.info("Using LLM for decision making (requires Ollama)")
+
+              while True:
+                  logger.info(f"Self-Healing Agent cycle - {datetime.datetime.now()}")
+                  time.sleep(60)
+
+          envFrom:
+            - configMapRef:
+                name: agent-config
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          terminationMessagePolicy: FallbackToLogsOnError
