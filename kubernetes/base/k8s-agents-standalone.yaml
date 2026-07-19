@@ -175,11 +175,11 @@ spec:
             failureThreshold: 3
           resources:
             requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
               cpu: 200m
               memory: 256Mi
-            limits:
-              cpu: 1000m
-              memory: 1Gi
 
 ---
 # DevOps Agent - Deployment with HPA
@@ -272,11 +272,11 @@ spec:
             failureThreshold: 3
           resources:
             requests:
-              cpu: 200m
-              memory: 512Mi
+              cpu: 50m
+              memory: 64Mi
             limits:
-              cpu: 1000m
-              memory: 1Gi
+              cpu: 200m
+              memory: 256Mi
 
 ---
 # Self-Healing Agent - Deployment with HPA
@@ -413,11 +413,11 @@ spec:
             failureThreshold: 3
           resources:
             requests:
-              cpu: 200m
-              memory: 512Mi
+              cpu: 50m
+              memory: 64Mi
             limits:
-              cpu: 1000m
-              memory: 1Gi
+              cpu: 200m
+              memory: 256Mi
 
 ---
 # HPA for DevOps Agent
@@ -432,7 +432,7 @@ spec:
     kind: Deployment
     name: devops-agent
   minReplicas: 1
-  maxReplicas: 3
+  maxReplicas: 2
   metrics:
     - type: Resource
       resource:
@@ -460,7 +460,7 @@ spec:
     kind: Deployment
     name: self-healing-agent
   minReplicas: 1
-  maxReplicas: 3
+  maxReplicas: 2
   metrics:
     - type: Resource
       resource:
