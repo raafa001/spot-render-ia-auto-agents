@@ -1,4 +1,8 @@
-# Spot Render IA Auto Agents - Kubernetes Manifests (Functional Version)
+# Spot Render IA Auto Agents - Kubernetes Manifests (with Health Checks & HPA)
+# =============================================================================
+# PT-BR: Manifests com liveness probe, readiness probe e HPA para todos os agentes
+# EN-US: Manifests with liveness probe, readiness probe and HPA for all agents
+# =============================================================================
 
 ---
 apiVersion: v1
@@ -81,6 +85,7 @@ data:
   state: "{}"
 
 ---
+# SRE Agent - DaemonSet (runs on every node, no HPA needed)
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -102,12 +107,30 @@ spec:
           command: ["python3", "-c"]
           args:
             - |
-              import subprocess, sys, json, time, logging
+              import subprocess, sys, json, time, logging, http.server, socketserver, threading
               from datetime import datetime
               subprocess.check_call([sys.executable, "-m", "pip", "install", "kubernetes>=29.0.0"])
               from kubernetes import client, config
               logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
               logger = logging.getLogger("sre-agent")
+              HEALTH_OK = True
+
+              class HealthHandler(http.server.SimpleHTTPRequestHandler):
+                  def do_GET(self):
+                      if self.path == '/healthz':
+                          self.send_response(200)
+                          self.end_headers()
+                          self.wfile.write(b'OK')
+                      else:
+                          self.send_response(404)
+                          self.end_headers()
+                  def log_message(self, format, *args): pass
+
+              def start_health_server():
+                  with socketserver.TCPServer(('', 8080), HealthHandler) as httpd:
+                      httpd.serve_forever()
+
+              threading.Thread(target=start_health_server, daemon=True).start()
               try:
                   config.load_incluster_config()
               except:
@@ -133,6 +156,23 @@ spec:
           envFrom:
             - configMapRef:
                 name: agent-config
+          ports:
+            - containerPort: 8080
+              name: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
           resources:
             requests:
               cpu: 100m
@@ -142,6 +182,7 @@ spec:
               memory: 512Mi
 
 ---
+# DevOps Agent - Deployment with HPA
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -164,12 +205,29 @@ spec:
           command: ["python3", "-c"]
           args:
             - |
-              import subprocess, sys, json, time, logging
+              import subprocess, sys, json, time, logging, http.server, socketserver, threading
               from datetime import datetime
               subprocess.check_call([sys.executable, "-m", "pip", "install", "kubernetes>=29.0.0"])
               from kubernetes import client, config
               logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
               logger = logging.getLogger("devops-agent")
+
+              class HealthHandler(http.server.SimpleHTTPRequestHandler):
+                  def do_GET(self):
+                      if self.path == '/healthz':
+                          self.send_response(200)
+                          self.end_headers()
+                          self.wfile.write(b'OK')
+                      else:
+                          self.send_response(404)
+                          self.end_headers()
+                  def log_message(self, format, *args): pass
+
+              def start_health_server():
+                  with socketserver.TCPServer(('', 8080), HealthHandler) as httpd:
+                      httpd.serve_forever()
+
+              threading.Thread(target=start_health_server, daemon=True).start()
               try:
                   config.load_incluster_config()
               except:
@@ -195,6 +253,23 @@ spec:
           envFrom:
             - configMapRef:
                 name: agent-config
+          ports:
+            - containerPort: 8080
+              name: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
           resources:
             requests:
               cpu: 100m
@@ -204,6 +279,7 @@ spec:
               memory: 512Mi
 
 ---
+# Self-Healing Agent - Deployment with HPA
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -226,12 +302,29 @@ spec:
           command: ["python3", "-c"]
           args:
             - |
-              import subprocess, sys, json, time, logging
+              import subprocess, sys, json, time, logging, http.server, socketserver, threading
               subprocess.check_call([sys.executable, "-m", "pip", "install", "kubernetes>=29.0.0", "httpx>=0.26.0"])
               import httpx
               from kubernetes import client, config
               logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
               logger = logging.getLogger("self-healing-agent")
+
+              class HealthHandler(http.server.SimpleHTTPRequestHandler):
+                  def do_GET(self):
+                      if self.path == '/healthz':
+                          self.send_response(200)
+                          self.end_headers()
+                          self.wfile.write(b'OK')
+                      else:
+                          self.send_response(404)
+                          self.end_headers()
+                  def log_message(self, format, *args): pass
+
+              def start_health_server():
+                  with socketserver.TCPServer(('', 8080), HealthHandler) as httpd:
+                      httpd.serve_forever()
+
+              threading.Thread(target=start_health_server, daemon=True).start()
               try:
                   config.load_incluster_config()
               except:
@@ -301,6 +394,23 @@ spec:
           envFrom:
             - configMapRef:
                 name: agent-config
+          ports:
+            - containerPort: 8080
+              name: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
           resources:
             requests:
               cpu: 100m
@@ -308,3 +418,59 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
+
+---
+# HPA for DevOps Agent
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: devops-agent
+  namespace: spot-render-ai-agents
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: devops-agent
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+---
+# HPA for Self-Healing Agent
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: self-healing-agent
+  namespace: spot-render-ai-agents
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: self-healing-agent
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
