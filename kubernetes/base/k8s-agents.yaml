@@ -1,0 +1,406 @@
+# Spot Render IA Auto Agent - Kubernetes Base Manifests
+# Namespace
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: spot-render-ai-agents
+  labels:
+    app.kubernetes.io/name: spot-render-ia-agents
+    app.kubernetes.io/component: agents
+    app.kubernetes.io/part-of: spot-render
+
+---
+# Service Account for Agents
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ai-agents
+  namespace: spot-render-ai-agents
+  labels:
+    app.kubernetes.io/name: ai-agents
+    app.kubernetes.io/component: service-account
+
+---
+# Role for SRE Agent - Read-only access to cluster
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: sre-agent
+  labels:
+    app.kubernetes.io/name: sre-agent
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps", "events", "namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch"]
+
+---
+# Role for DevOps Agent - Management access
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: devops-agent
+  labels:
+    app.kubernetes.io/name: devops-agent
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps", "events", "namespaces", "secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+---
+# Role for Self-Healing Agent - Execute remediations
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: self-healing-agent
+  labels:
+    app.kubernetes.io/name: self-healing-agent
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps", "events"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch", "update"]
+
+---
+# Role Bindings
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: sre-agent
+  labels:
+    app.kubernetes.io/name: sre-agent
+subjects:
+  - kind: ServiceAccount
+    name: ai-agents
+    namespace: spot-render-ai-agents
+roleRef:
+  kind: ClusterRole
+  name: sre-agent
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: devops-agent
+  labels:
+    app.kubernetes.io/name: devops-agent
+subjects:
+  - kind: ServiceAccount
+    name: ai-agents
+    namespace: spot-render-ai-agents
+roleRef:
+  kind: ClusterRole
+  name: devops-agent
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: self-healing-agent
+  labels:
+    app.kubernetes.io/name: self-healing-agent
+subjects:
+  - kind: ServiceAccount
+    name: ai-agents
+    namespace: spot-render-ai-agents
+roleRef:
+  kind: ClusterRole
+  name: self-healing-agent
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# ConfigMap for Agent Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-config
+  namespace: spot-render-ai-agents
+  labels:
+    app.kubernetes.io/name: agent-config
+data:
+  AGENT_NAMESPACE: "spot-render"
+  AGENT_LOG_LEVEL: "INFO"
+  OLLAMA_URL: "http://ollama.spot-render.svc.cluster.local:11434"
+  OLLAMA_MODEL: "llama3.2:latest"
+  SNAPSHOT_RETENTION_COUNT: "1000"
+  SNAPSHOT_RETENTION_HOURS: "72"
+  DECISION_THRESHOLD: "0.7"
+
+---
+# ConfigMap for Inter-Agent Communication
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-messages
+  namespace: spot-render-ai-agents
+  labels:
+    app.kubernetes.io/name: agent-messages
+data:
+  messages: "[]"
+
+---
+# ConfigMap for Shared State
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-shared-state
+  namespace: spot-render-ai-agents
+  labels:
+    app.kubernetes.io/name: agent-shared-state
+data:
+  state: "{}"
+
+---
+# SRE Agent - DaemonSet
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: sre-agent
+  namespace: spot-render-ai-agents
+  labels:
+    app.kubernetes.io/name: sre-agent
+    app.kubernetes.io/component: agent
+    app.kubernetes.io/part-of: spot-render
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sre-agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sre-agent
+        app.kubernetes.io/component: agent
+        app.kubernetes.io/part-of: spot-render
+    spec:
+      serviceAccountName: ai-agents
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: sre-agent
+          image: spot-render-ia-agent:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "agents.sre_agent"]
+          env:
+            - name: AGENT_NAME
+              value: "sre-agent"
+            - name: AGENT_PROFILE
+              value: "sre"
+            - name: AGENT_NAMESPACE
+              valueFrom:
+                configMapKeyRef:
+                  name: agent-config
+                  key: AGENT_NAMESPACE
+            - name: OLLAMA_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: agent-config
+                  key: OLLAMA_URL
+            - name: OLLAMA_MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: agent-config
+                  key: OLLAMA_MODEL
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: agent-config
+                  key: AGENT_LOG_LEVEL
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            exec:
+              command: ["python", "-c", "import sys; sys.exit(0)"]
+            initialDelaySeconds: 30
+            periodSeconds: 60
+          readinessProbe:
+            exec:
+              command: ["python", "-c", "import sys; sys.exit(0)"]
+            initialDelaySeconds: 10
+            periodSeconds: 30
+
+---
+# DevOps Agent - StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: devops-agent
+  namespace: spot-render-ai-agents
+  labels:
+    app.kubernetes.io/name: devops-agent
+    app.kubernetes.io/component: agent
+    app.kubernetes.io/part-of: spot-render
+spec:
+  serviceName: devops-agent
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: devops-agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: devops-agent
+        app.kubernetes.io/component: agent
+        app.kubernetes.io/part-of: spot-render
+    spec:
+      serviceAccountName: ai-agents
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: devops-agent
+          image: spot-render-ia-agent:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "agents.devops_agent"]
+          env:
+            - name: AGENT_NAME
+              value: "devops-agent"
+            - name: AGENT_PROFILE
+              value: "devops"
+            - name: AGENT_NAMESPACE
+              valueFrom:
+                configMapKeyRef:
+                  name: agent-config
+                  key: AGENT_NAMESPACE
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: agent-config
+                  key: AGENT_LOG_LEVEL
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          livenessProbe:
+            exec:
+              command: ["python", "-c", "import sys; sys.exit(0)"]
+            initialDelaySeconds: 30
+            periodSeconds: 60
+          readinessProbe:
+            exec:
+              command: ["python", "-c", "import sys; sys.exit(0)"]
+            initialDelaySeconds: 10
+            periodSeconds: 30
+
+---
+# Self-Healing Agent - Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: self-healing-agent
+  namespace: spot-render-ai-agents
+  labels:
+    app.kubernetes.io/name: self-healing-agent
+    app.kubernetes.io/component: agent
+    app.kubernetes.io/part-of: spot-render
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: self-healing-agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: self-healing-agent
+        app.kubernetes.io/component: agent
+        app.kubernetes.io/part-of: spot-render
+    spec:
+      serviceAccountName: ai-agents
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: self-healing-agent
+          image: spot-render-ia-agent:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "agents.self_healing_agent"]
+          env:
+            - name: AGENT_NAME
+              value: "self-healing-agent"
+            - name: AGENT_PROFILE
+              value: "self_healing"
+            - name: AGENT_NAMESPACE
+              valueFrom:
+                configMapKeyRef:
+                  name: agent-config
+                  key: AGENT_NAMESPACE
+            - name: OLLAMA_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: agent-config
+                  key: OLLAMA_URL
+            - name: OLLAMA_MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: agent-config
+                  key: OLLAMA_MODEL
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: agent-config
+                  key: AGENT_LOG_LEVEL
+          resources:
+            requests:
+              cpu: 300m
+              memory: 512Mi
+            limits:
+              cpu: 1500m
+              memory: 2Gi
+          livenessProbe:
+            exec:
+              command: ["python", "-c", "import sys; sys.exit(0)"]
+            initialDelaySeconds: 60
+            periodSeconds: 60
+          readinessProbe:
+            exec:
+              command: ["python", "-c", "import sys; sys.exit(0)"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+
+---
+# Service for Agent API (optional)
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-api
+  namespace: spot-render-ai-agents
+  labels:
+    app.kubernetes.io/name: agent-api
+spec:
+  clusterIP: None
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+  selector:
+    app.kubernetes.io/name: self-healing-agent

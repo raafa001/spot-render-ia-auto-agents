@@ -1,0 +1,165 @@
+[build-system]
+requires = ["hatchling", "hatch-fancy-pypi-readme>=22.5.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "spot-render-ia-auto-agent"
+version = "0.1.0"
+description = "Autonomous AI agents for Kubernetes monitoring, observability, and self-healing"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [
+    { name = "Spot Render Team", email = "team@spotrender.dev" }
+]
+keywords = [
+    "kubernetes",
+    "aiops",
+    "self-healing",
+    "monitoring",
+    "observability",
+    "agents",
+    "llm",
+    "autonomous",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Monitoring",
+    "Topic :: System :: Systems Administration",
+]
+
+dependencies = [
+    # Core
+    "asyncio>=3.4.3",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+
+    # Kubernetes
+    "kubernetes>=29.0.0",
+
+    # Monitoring & Metrics
+    "prometheus-client>=0.19.0",
+    "prometheus-api-client>=0.4.0",
+    "kubernetes-prometheus-client>=0.1.1",
+
+    # Logging
+    "python-json-logger>=2.0.7",
+    "structlog>=24.1.0",
+
+    # LLM & RAG
+    "httpx>=0.26.0",
+    "sentence-transformers>=2.3.0",
+    "chromadb>=0.4.22",
+    "numpy>=1.26.0",
+
+    # Data processing
+    "pandas>=2.1.0",
+    "numpy>=1.26.0",
+
+    # Anomaly Detection
+    "scikit-learn>=1.4.0",
+    " scipy>=1.12.0",
+
+    # HTTP & API
+    "fastapi>=0.109.0",
+    "uvicorn>=0.27.0",
+
+    # Utilities
+    "python-dateutil>=2.8.2",
+    "tenacity>=8.2.3",
+    "cachetools>=5.3.0",
+
+    # Configuration
+    "pyyaml>=6.0.1",
+
+    # Testing
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "httpx>=0.26.0",  # For test client
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.2.0",
+    "mypy>=1.8.0",
+    "pre-commit>=3.6.0",
+    "jupyter>=1.0.0",
+]
+
+test = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "pytest-mock>=3.12.0",
+    "coverage>=7.4.0",
+]
+
+all = [
+    "spot-render-ia-auto-agent[dev,test]",
+]
+
+[project.scripts]
+spot-sre-agent = "agents.sre_agent:main"
+spot-devops-agent = "agents.devops_agent:main"
+spot-selfhealing-agent = "agents.self_healing_agent:main"
+
+[project.urls]
+Homepage = "https://github.com/raafa001/spot-render-ia-auto-agent"
+Documentation = "https://github.com/raafa001/spot-render-ia-auto-agent/docs"
+Repository = "https://github.com/raafa001/spot-render-ia-auto-agent"
+Issues = "https://github.com/raafa001/spot-render-ia-auto-agent/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["agents", "core"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --cov=. --cov-report=term-missing"
+
+[tool.coverage.run]
+source = ["agents", "core"]
+omit = ["tests/*", "**/__pycache__/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # Pyflakes
+    "I",   # isort
+    "C",   # flake8-comprehensions
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+    "B008",  # do not perform function calls in argument defaults
+    "C901",  # too complex
+]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
